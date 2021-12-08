@@ -17,7 +17,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
+  download_assets: ^2.1.0
   viewer_model:
     # When depending on this package from a real application you should use:
     #   viewer_model: ^x.y.z

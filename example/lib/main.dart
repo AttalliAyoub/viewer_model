@@ -1,11 +1,19 @@
+import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'dart:async';
-
-import 'package:flutter/services.dart';
+import 'package:path/path.dart' as path;
+import 'package:flutter/rendering.dart';
 import 'package:viewer_model/viewer_model.dart';
+import 'package:download_assets/download_assets.dart';
+import 'package:vector_math/vector_math.dart' show Vector3;
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatefulWidget {
@@ -16,47 +24,303 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  String _platformVersion = 'Unknown';
+  final downloadAssetsController = DownloadAssetsController();
 
-  @override
-  void initState() {
-    super.initState();
-    initPlatformState();
+  Future _refresh() async {
+    await downloadAssetsController.clearAssets();
+    await _downloadAssets();
   }
 
-  // Platform messages are asynchronous, so we initialize in an async method.
-  Future<void> initPlatformState() async {
-    String platformVersion;
-    // Platform messages may fail, so we use a try/catch PlatformException.
-    // We also handle the message potentially returning null.
-    try {
-      platformVersion =
-          await ViewerModel.platformVersion ?? 'Unknown platform version';
-    } on PlatformException {
-      platformVersion = 'Failed to get platform version.';
+  void _showMessage({
+    required String message,
+    String label = 'OK',
+    VoidCallback? onPressed,
+  }) {
+    onPressed ??= () {};
+    final snackBar = SnackBar(
+      content: Text(message),
+      action: SnackBarAction(label: label, onPressed: onPressed),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  }
+
+  double roationValue = 0.0;
+  Vector3 camPos = Vector3.zero();
+  late ViewerModelController viewer3dCtl;
+
+  Future _downloadAssets() async {
+    final assetsDownloaded =
+        await downloadAssetsController.assetsDirAlreadyExists();
+    if (assetsDownloaded) {
+      _showMessage(message: 'your assets is Downloaded');
+      return;
     }
+    try {
+      await downloadAssetsController.startDownload(
+          assetsUrl:
+              "https://github.com/edjostenes/download_assets/raw/master/assets.zip",
+          onProgress: (progressValue) {
+            _showMessage(
+                message: "Downloading - ${progressValue.toStringAsFixed(2)}");
+          },
+          onComplete: () {
+            _showMessage(
+                message:
+                    "Download completed\nClick in refresh button to force download");
+          },
+          onError: (exception) {
+            _showMessage(message: "Error: ${exception.toString()}");
+          });
+    } on DownloadAssetsException catch (e) {
+      _showMessage(message: e.toString());
+    }
+  }
 
-    // If the widget was removed from the tree while the asynchronous platform
-    // message was in flight, we want to discard the reply rather than calling
-    // setState to update our non-existent appearance.
-    if (!mounted) return;
+  Future<void> loading = Future<void>.value();
 
-    setState(() {
-      _platformVersion = platformVersion;
-    });
+  void pickFile() async {
+    print(downloadAssetsController.assetsDir);
+    final list = Directory(downloadAssetsController.assetsDir).listSync();
+    // final list = await Download.assetsDir.then((d) => d.listSync());
+    showDialog(
+        context: context,
+        builder: (context) {
+          return SimpleDialog(
+            title: const Text('Load a file'),
+            // children: dir.listSync().map((file) {
+            //   return ListTile(
+            //     title: Text(path.basename(file.path)),
+            //     subtitle: Text(file.path),
+            //   );
+            // }).toList(),
+            children: [
+              for (final file in list)
+                ListTile(
+                  leading: const Icon(Icons.view_in_ar),
+                  title: const Text('Model'),
+                  subtitle: Text(path.basename(file.path)),
+                  // subtitle: Text(file.path),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    // debugPrint(file.path);
+                    setState(() {
+                      loading = viewer3dCtl
+                          .loadModel(Model(path: file.path))
+                          .then((value) {
+                        _showMessage(
+                            message: '${path.basename(file.path)} loaded');
+                      }).catchError((err) {
+                        _showMessage(message: '$err');
+                      });
+                    });
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.view_in_ar),
+                title: const Text('Model'),
+                subtitle: const Text('Sphere'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  setState(() {
+                    loading = viewer3dCtl.loadEarth().then((value) {
+                      _showMessage(message: 'Earth loaded');
+                    }).catchError((err) {
+                      _showMessage(message: '$err');
+                    });
+                  });
+                },
+              ),
+            ],
+          );
+        });
+  }
+
+  Model? get initialModel {
+    final file = File(
+        '/data/user/0/com.ayoub.viewer_model_example/app_flutter/assets/T-shirt_3dmodel.obj');
+    if (file.existsSync()) return Model(path: file.path);
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
+    return Scaffold(
         appBar: AppBar(
           title: const Text('Plugin example app'),
         ),
-        body: Center(
-          child: Text('Running on: $_platformVersion\n'),
+        floatingActionButton: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton(
+              child: const Icon(Icons.refresh),
+              onPressed: () {
+                _showMessage(
+                    message: 'Are you shure you want to refresh',
+                    label: 'Refresh',
+                    onPressed: _refresh);
+              },
+            ),
+            const SizedBox(width: 10),
+            FloatingActionButton(
+              child: const Icon(Icons.upload_file),
+              onPressed: pickFile,
+            ),
+          ],
         ),
-      ),
-    );
+        body: Stack(
+          children: [
+            ViewerModel(
+              initialModel: initialModel,
+              onViewCreated: (ctl) {
+                viewer3dCtl = ctl;
+                _downloadAssets();
+              },
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 100,
+              child: StreamBuilder(
+                builder: (context, snap) {
+                  debugPrint('${snap.data}');
+                  return Container(
+                    color: Colors.green,
+                    padding: const EdgeInsets.all(10),
+                    child: Text('${snap.data}'),
+                  );
+                },
+              ),
+            ),
+            GestureDetector(
+              // onPanUpdate: (details) {
+              //   viewer3dCtl.rotation.y -= details.delta.dx;
+              //   viewer3dCtl.rotation.z -= details.delta.dy;
+              //   viewer3dCtl.rotate(viewer3dCtl.rotation);
+              // },
+              onHorizontalDragUpdate: (details) {
+                viewer3dCtl.rotation.y -= details.primaryDelta ?? 0;
+                viewer3dCtl.rotate(viewer3dCtl.rotation);
+              },
+              onScaleUpdate: (details) {
+                // details.
+
+                // print({
+                //   'scale': details.scale,
+                //   'delta': details.delta,
+                //   'horizontalScale': details.horizontalScale,
+                //   'localFocalPoint': details.localFocalPoint,
+                //   'pointerCount': details.pointerCount,
+                //   'rotation': details.rotation,
+                //   'verticalScale': details.verticalScale,
+                // });
+                //                 viewer3dCtl.position.z -= details.delta.dx;
+                // print(details.scale - 1);
+                viewer3dCtl.position.z += details.scale - 1;
+                viewer3dCtl.moveCam(viewer3dCtl.position);
+                // viewer3dCtl.
+              },
+            ),
+            Center(
+              child: FutureBuilder(
+                future: loading,
+                builder: (context, snap) {
+                  final waiting =
+                      snap.connectionState == ConnectionState.waiting;
+                  if (waiting) {
+                    return const CircularProgressIndicator();
+                  }
+                  return Container();
+                },
+              ),
+            ),
+            /*
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Cam Pos: ${camPos.shortJson}',
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                    Text(
+                      'Obj rotation: ${roationValue.toStringAsFixed(2)}',
+                      style: const TextStyle(color: Colors.red),
+                    )
+                  ],
+                ),
+              ),
+              Positioned(
+                top: 20,
+                right: 20,
+                child: TextButton(
+                  child: Text('loadFile $roationValue'),
+                  onPressed: () async {
+                    viewer3dCtl.loadFile('assets/T-shirt_3dmodel.obj');
+                  },
+                ),
+              ),
+
+              Positioned(
+                bottom: 20,
+                left: 20,
+                right: 20,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Slider(
+                      min: -360,
+                      max: 360,
+                      value: camPos.x,
+                      label: 'Cam x',
+                      onChanged: (double value) {
+                        setState(() {
+                          camPos.x = value;
+                        });
+                        viewer3dCtl.moveCam(camPos);
+                      },
+                    ),
+                    Slider(
+                      min: -360,
+                      max: 360,
+                      value: camPos.y,
+                      label: 'Cam y',
+                      onChanged: (double value) {
+                        setState(() {
+                          camPos.y = value;
+                        });
+                        viewer3dCtl.moveCam(camPos);
+                      },
+                    ),
+                    Slider(
+                      min: -360,
+                      max: 360,
+                      value: camPos.z,
+                      label: 'Cam z',
+                      onChanged: (double value) {
+                        setState(() {
+                          camPos.z = value;
+                        });
+                        debugPrint('${camPos.z}');
+                        viewer3dCtl.moveCam(camPos);
+                      },
+                    ),
+                    Slider(
+                      min: -360,
+                      max: 360,
+                      value: roationValue,
+                      label: 'object y rote',
+                      onChanged: (double value) {
+                        setState(() {
+                          roationValue = value;
+                        });
+                        viewer3dCtl.rotate(Vector3(0, value, 0));
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              */
+          ],
+        ));
   }
 }
