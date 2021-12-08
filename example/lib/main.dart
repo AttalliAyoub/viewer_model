@@ -44,9 +44,7 @@ class _MyAppState extends State<MyApp> {
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
-  double roationValue = 0.0;
-  Vector3 camPos = Vector3.zero();
-  late ViewerModelController viewer3dCtl;
+  ViewerModelController? viewer3dCtl;
 
   Future _downloadAssets() async {
     final assetsDownloaded =
@@ -101,10 +99,11 @@ class _MyAppState extends State<MyApp> {
                   subtitle: Text(path.basename(file.path)),
                   // subtitle: Text(file.path),
                   onTap: () async {
+                    if (viewer3dCtl == null) return;
                     Navigator.of(context).pop();
                     // debugPrint(file.path);
                     setState(() {
-                      loading = viewer3dCtl
+                      loading = viewer3dCtl!
                           .loadModel(Model(path: file.path))
                           .then((value) {
                         _showMessage(
@@ -120,9 +119,10 @@ class _MyAppState extends State<MyApp> {
                 title: const Text('Model'),
                 subtitle: const Text('Sphere'),
                 onTap: () async {
+                  if (viewer3dCtl == null) return;
                   Navigator.of(context).pop();
                   setState(() {
-                    loading = viewer3dCtl.loadEarth().then((value) {
+                    loading = viewer3dCtl!.loadEarth().then((value) {
                       _showMessage(message: 'Earth loaded');
                     }).catchError((err) {
                       _showMessage(message: '$err');
@@ -175,49 +175,51 @@ class _MyAppState extends State<MyApp> {
                 _downloadAssets();
               },
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 100,
-              child: StreamBuilder(
-                builder: (context, snap) {
-                  debugPrint('${snap.data}');
-                  return Container(
-                    color: Colors.green,
-                    padding: const EdgeInsets.all(10),
-                    child: Text('${snap.data}'),
-                  );
-                },
-              ),
-            ),
-            GestureDetector(
-              // onPanUpdate: (details) {
-              //   viewer3dCtl.rotation.y -= details.delta.dx;
-              //   viewer3dCtl.rotation.z -= details.delta.dy;
-              //   viewer3dCtl.rotate(viewer3dCtl.rotation);
-              // },
-              onHorizontalDragUpdate: (details) {
-                viewer3dCtl.rotation.y -= details.primaryDelta ?? 0;
-                viewer3dCtl.rotate(viewer3dCtl.rotation);
-              },
-              onScaleUpdate: (details) {
-                // details.
-
-                // print({
-                //   'scale': details.scale,
-                //   'delta': details.delta,
-                //   'horizontalScale': details.horizontalScale,
-                //   'localFocalPoint': details.localFocalPoint,
-                //   'pointerCount': details.pointerCount,
-                //   'rotation': details.rotation,
-                //   'verticalScale': details.verticalScale,
-                // });
-                //                 viewer3dCtl.position.z -= details.delta.dx;
-                // print(details.scale - 1);
-                viewer3dCtl.position.z += details.scale - 1;
-                viewer3dCtl.moveCam(viewer3dCtl.position);
-                // viewer3dCtl.
+            // Positioned(
+            //   top: 0,
+            //   left: 0,
+            //   right: 0,
+            //   height: 100,
+            //   child: StreamBuilder(
+            //     stream: viewer3dCtl?.loading,
+            //     builder: (context, snap) {
+            //       debugPrint('${snap.data}');
+            //       return Container(
+            //         color: Colors.green,
+            //         padding: const EdgeInsets.all(10),
+            //         child: Text('${snap.data}'),
+            //       );
+            //     },
+            //   ),
+            // ),
+            FormField<double>(
+              initialValue: 1.0,
+              builder: (state) {
+                return GestureDetector(
+                  // onPanUpdate: (details) {
+                  //   viewer3dCtl.rotation.y -= details.delta.dx;
+                  //   viewer3dCtl.rotation.z -= details.delta.dy;
+                  //   viewer3dCtl.rotate(viewer3dCtl.rotation);
+                  // },
+                  onHorizontalDragUpdate: (details) {
+                    viewer3dCtl?.rotation.y -= details.primaryDelta ?? 0;
+                    viewer3dCtl?.rotate(viewer3dCtl?.rotation);
+                  },
+                  onScaleStart: (details) {
+                    state.didChange(1.0);
+                  },
+                  onScaleUpdate: (details) {
+                    setState(() {
+                      viewer3dCtl?.camPosition.z -=
+                          details.scale - (state.value ?? 0);
+                      if ((viewer3dCtl?.camPosition.z ?? 0) < 0.1) {
+                        viewer3dCtl?.camPosition.z = .1;
+                      }
+                      viewer3dCtl?.moveCam(viewer3dCtl?.camPosition);
+                      state.didChange(details.scale);
+                    });
+                  },
+                );
               },
             ),
             Center(
@@ -233,93 +235,85 @@ class _MyAppState extends State<MyApp> {
                 },
               ),
             ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Cam Pos: ${viewer3dCtl?.camPosition.shortJson}',
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  Text(
+                    'Obj rotation: ${viewer3dCtl?.rotation.shortJson}',
+                    style: const TextStyle(color: Colors.red),
+                  )
+                ],
+              ),
+            ),
             /*
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Cam Pos: ${camPos.shortJson}',
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                    Text(
-                      'Obj rotation: ${roationValue.toStringAsFixed(2)}',
-                      style: const TextStyle(color: Colors.red),
-                    )
-                  ],
-                ),
+            Positioned(
+              bottom: 20,
+              left: 20,
+              right: 20,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Slider(
+                    min: -360,
+                    max: 360,
+                    value: camPos.x,
+                    label: 'Cam x',
+                    onChanged: (double value) {
+                      setState(() {
+                        camPos.x = value;
+                      });
+                      viewer3dCtl.moveCam(camPos);
+                    },
+                  ),
+                  Slider(
+                    min: -360,
+                    max: 360,
+                    value: camPos.y,
+                    label: 'Cam y',
+                    onChanged: (double value) {
+                      setState(() {
+                        camPos.y = value;
+                      });
+                      viewer3dCtl.moveCam(camPos);
+                    },
+                  ),
+                  Slider(
+                    min: -360,
+                    max: 360,
+                    value: camPos.z,
+                    label: 'Cam z',
+                    onChanged: (double value) {
+                      setState(() {
+                        camPos.z = value;
+                      });
+                      debugPrint('${camPos.z}');
+                      viewer3dCtl.moveCam(camPos);
+                    },
+                  ),
+                  Slider(
+                    min: -360,
+                    max: 360,
+                    value: roationValue,
+                    label: 'object y rote',
+                    onChanged: (double value) {
+                      setState(() {
+                        roationValue = value;
+                      });
+                      viewer3dCtl.rotate(Vector3(0, value, 0));
+                    },
+                  ),
+                ],
               ),
-              Positioned(
-                top: 20,
-                right: 20,
-                child: TextButton(
-                  child: Text('loadFile $roationValue'),
-                  onPressed: () async {
-                    viewer3dCtl.loadFile('assets/T-shirt_3dmodel.obj');
-                  },
-                ),
-              ),
-
-              Positioned(
-                bottom: 20,
-                left: 20,
-                right: 20,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Slider(
-                      min: -360,
-                      max: 360,
-                      value: camPos.x,
-                      label: 'Cam x',
-                      onChanged: (double value) {
-                        setState(() {
-                          camPos.x = value;
-                        });
-                        viewer3dCtl.moveCam(camPos);
-                      },
-                    ),
-                    Slider(
-                      min: -360,
-                      max: 360,
-                      value: camPos.y,
-                      label: 'Cam y',
-                      onChanged: (double value) {
-                        setState(() {
-                          camPos.y = value;
-                        });
-                        viewer3dCtl.moveCam(camPos);
-                      },
-                    ),
-                    Slider(
-                      min: -360,
-                      max: 360,
-                      value: camPos.z,
-                      label: 'Cam z',
-                      onChanged: (double value) {
-                        setState(() {
-                          camPos.z = value;
-                        });
-                        debugPrint('${camPos.z}');
-                        viewer3dCtl.moveCam(camPos);
-                      },
-                    ),
-                    Slider(
-                      min: -360,
-                      max: 360,
-                      value: roationValue,
-                      label: 'object y rote',
-                      onChanged: (double value) {
-                        setState(() {
-                          roationValue = value;
-                        });
-                        viewer3dCtl.rotate(Vector3(0, value, 0));
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              */
+            ),
+          */
           ],
         ));
   }

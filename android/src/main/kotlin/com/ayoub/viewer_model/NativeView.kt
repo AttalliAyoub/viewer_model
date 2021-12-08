@@ -15,6 +15,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.platform.PlatformView
 import org.rajawali3d.Object3D
 import org.rajawali3d.lights.DirectionalLight
+import org.rajawali3d.lights.SpotLight
 import org.rajawali3d.loader.ALoader
 import org.rajawali3d.loader.LoaderOBJ
 import org.rajawali3d.loader.async.IAsyncLoaderCallback
@@ -62,19 +63,26 @@ internal class NativeView(
         surfaceView.renderMode = ISurface.RENDERMODE_WHEN_DIRTY
         surfaceView.setSurfaceRenderer(this)
         surfaceView.renderMode = ISurface.RENDERMODE_WHEN_DIRTY
-        this.setAntiAliasingMode(ISurface.ANTI_ALIASING_CONFIG.COVERAGE)
+        // this.setAntiAliasingMode(ISurface.ANTI_ALIASING_CONFIG.COVERAGE)
     }
 
     override fun initScene() {
+        // ALight
+        // PointLight
+        // SpotLight
+        val spotLight = SpotLight(1f, .2f, -1f)
+        spotLight.setColor(1.0f, 1.0f, 1.0f)
+        spotLight.power = 2f
         mDirectionalLight = DirectionalLight(1.0, .2, -1.0)
         mDirectionalLight.setColor(1.0f, 1.0f, 1.0f)
         mDirectionalLight.power = 2f
         currentScene.addLight(mDirectionalLight)
+        currentScene.addLight(spotLight)
+        currentScene.backgroundColor = Color.WHITE
         currentCamera.farPlane = 1000.0
-        // currentCamera.nearPlane = 0.1
+        currentCamera.nearPlane = 0.1
         currentCamera.z = 4.2
         loadFirstModel()
-        events?.success(mapOf("event" to "initScene"))
     }
 
     override fun dispose() {
@@ -91,7 +99,14 @@ internal class NativeView(
     ) {
         events?.success(mapOf(
             "event" to "OffsetsChanged",
-            
+            "data" to mapOf(
+                "xOffset" to xOffset,
+                "yOffset" to yOffset,
+                "xOffsetStep" to xOffsetStep,
+                "yOffsetStep" to yOffsetStep,
+                "xPixelOffset" to xPixelOffset,
+                "yPixelOffset" to yPixelOffset
+            )
         ))
 
     }
@@ -169,7 +184,6 @@ internal class NativeView(
         }
     }
 
-
     override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: MethodChannel.Result) {
         when (call.method) {
             "loadModel" -> {
@@ -198,27 +212,39 @@ internal class NativeView(
                 currentCamera.position = Vector3(x, y, z)
                 result.success(null)
             }
+            /*
             "getRotation" -> {
                 result.success(mObject.rotY)
             }
+            */
             else -> result.notImplemented()
         }
     }
 
     private fun loadModel(loader: ALoader, texture: String? = null, result: MethodChannel.Result? = null): ALoader {
         return super.loadModel(loader, object: IAsyncLoaderCallback {
-            override fun onModelLoadComplete(loader: ALoader) {
+            override fun onModelLoadComplete(l: ALoader) {
                 currentScene.clearChildren()
-                mObject = (loader as LoaderOBJ).parsedObject
-                // mObject.material = loadTexture(texture)
+                val loader = l as LoaderOBJ
+                mObject = loader.parsedObject
+                mObject.material = loadTexture(texture)
                 mObject.position = Vector3.ZERO
                 val box = mObject.boundingBox.max
                 currentCamera.position = Vector3(0.0, box.y / 2, box.z * 8)
                 currentScene.addChild(mObject)
                 result?.success(null)
+                events?.success(mapOf(
+                    "event" to "loading",
+                    "data" to mapOf("status" to false)))
+                events?.success(mapOf(
+                    "event" to "cameraPosition",
+                    "data" to gson.toJson(currentCamera.position)
+                ))
             }
             override fun onModelLoadFailed(loader: ALoader?) {
                 result?.error("CAN_NOT_LOAD", "Model load failed", "")
+                events?.error("CAN_NOT_LOAD", "Model load failed", "")
+
             }
         }, loader.tag)
     }
@@ -228,7 +254,7 @@ internal class NativeView(
         material.enableLighting(true)
         material.diffuseMethod = DiffuseMethod.Lambert()
         material.color = Color.RED
-        material.colorInfluence = 0f
+        material.colorInfluence = 1f
         if (path != null) {
             val image = BitmapFactory.decodeStream(context.assets.open(path))
             val texture = Texture("path", image)
@@ -247,7 +273,9 @@ internal class NativeView(
         mObject.material = loadTexture()
         mObject.position = Vector3.ZERO
         currentScene.addChild(mObject)
-        // events?.success(mapOf("event" to "loadEarth"))
+        events?.success(mapOf(
+            "event" to "loadEarth",
+            "data" to mapOf("status" to false)))
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -260,9 +288,13 @@ internal class NativeView(
 
     override fun onInputConnectionLocked() {
         this.onPause()
+        events?.success(mapOf(
+            "event" to "onInputConnectionLocked"))
     }
 
     override fun onInputConnectionUnlocked() {
         this.onResume()
+        events?.success(mapOf(
+            "event" to "onInputConnectionUnlocked"))
     }
 }

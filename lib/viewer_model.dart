@@ -14,7 +14,10 @@
 // import 'dart:async';
 library viewer_model;
 
-import 'package:flutter/gestures.dart';
+import 'dart:async';
+import 'dart:convert';
+
+// import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
@@ -50,6 +53,12 @@ class _ViewerModelState extends State<ViewerModel> {
   void initState() {
     super.initState();
     creationParams['initialModel'] = widget.initialModel?.json;
+  }
+
+  @override
+  void dispose() {
+    controller._dispose();
+    super.dispose();
   }
 
   void _onPlatformViewCreated(int id) {
