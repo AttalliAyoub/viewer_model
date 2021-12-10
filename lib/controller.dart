@@ -22,20 +22,41 @@ class ViewerModelController {
   //   }
   // }
 
-  final int id;
-  final MethodChannel _channel;
-  final EventChannel _eventChannel;
-  late final StreamSubscription<dynamic> _streamSub;
-  ViewerModelController._({
-    required this.id,
-    Model? model,
-  })  : _channel = MethodChannel('method_viewer_model$id'),
-        _eventChannel = EventChannel('event_viewer_model$id'),
-        // _stream = _eventChannel.receiveBroadcastStream(),
-        _model = model {
-    _streamSub = _eventChannel.receiveBroadcastStream().listen(_listen);
+  final _reday = Completer<void>();
+  Future<void> get reday => _reday.future;
+
+  set id(int id) {
+    viewId = id;
+    _channel = MethodChannel('method_viewer_model$id');
+    _eventChannel = EventChannel('event_viewer_model$id');
+    _streamSub = _eventChannel
+        .receiveBroadcastStream()
+        .listen(_listen, onError: _onError);
+    _reday.complete();
   }
-  // late final Stream<bool> loading;
+
+  late final int viewId;
+  late final MethodChannel _channel;
+  late final EventChannel _eventChannel;
+  bool _transparentBackground;
+  bool get transparentBackground {
+    return _transparentBackground;
+  }
+
+  final _loadingController = StreamController<bool>(sync: true);
+  Stream<bool> get loading => _loadingController.stream;
+  late final StreamSubscription<dynamic> _streamSub;
+  ViewerModelController({
+    bool transparentBackground = false,
+    Model? model,
+  })  : _model = model,
+        _transparentBackground = transparentBackground {
+    _loadingController.add(model != null);
+  }
+
+  void _onError(dynamic err) {
+    print(err);
+  }
 
   void _listen(dynamic event) {
     switch (event['event']) {
@@ -56,28 +77,60 @@ class ViewerModelController {
         break;
       case "loading":
         final data = event['data'];
-        print(data);
+        _loadingController.add(data['status']);
         break;
       case "loadEarth":
         final data = event['data'];
-        print(data);
+        _loadingController.add(data['status']);
         break;
       default:
     }
   }
 
   void _dispose() {
+    _loadingController.close();
     _streamSub.cancel();
+  }
+
+  Future<T> _loadingMidle<T>(Future<T> future) async {
+    _loadingController.add(true);
+    try {
+      final r = await future;
+      _loadingController.add(false);
+      return r;
+    } catch (err) {
+      _loadingController.add(false);
+      rethrow;
+    }
+  }
+
+  Future<bool> setTransparentBackground(bool value) async {
+    final result = await _channel
+        .invokeMethod<bool>('transparentBackground', {'value': value});
+    _transparentBackground = result!;
+    return _transparentBackground;
+  }
+
+  Future<void> backgroundImage(String path) {
+    _model = model;
+    return _loadingMidle(
+        _channel.invokeMethod<void>('backgroundImage', {'path': path}));
+  }
+
+  Future<void> loadTexture(Model model) {
+    _model = model;
+    return _loadingMidle(
+        _channel.invokeMethod<void>('loadTexture', model.json));
   }
 
   Future<void> loadModel(Model model) {
     _model = model;
-    return _channel.invokeMethod<void>('loadModel', model.json);
+    return _loadingMidle(_channel.invokeMethod<void>('loadModel', model.json));
   }
 
   Future<void> loadEarth() {
     _model = model;
-    return _channel.invokeMethod<void>('loadEarth');
+    return _loadingMidle(_channel.invokeMethod<void>('loadEarth'));
   }
 
   Vector3 rotation = Vector3.zero();

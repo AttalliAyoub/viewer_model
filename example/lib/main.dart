@@ -1,11 +1,8 @@
-import 'dart:io';
-import 'dart:math' as math;
-import 'package:flutter/material.dart';
-import 'package:path/path.dart' as path;
-import 'package:flutter/rendering.dart';
+import 'package:flutter_document_picker/flutter_document_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:viewer_model/viewer_model.dart';
-import 'package:download_assets/download_assets.dart';
-import 'package:vector_math/vector_math.dart' show Vector3;
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path_p;
 
 void main() {
   runApp(
@@ -24,11 +21,27 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  final downloadAssetsController = DownloadAssetsController();
+  final viewerModelController =
+      ViewerModelController(transparentBackground: false);
 
-  Future _refresh() async {
-    await downloadAssetsController.clearAssets();
-    await _downloadAssets();
+  @override
+  void initState() {
+    super.initState();
+    getPermission(Permission.storage).then((value) async {
+      await getPermission(Permission.manageExternalStorage);
+    });
+  }
+
+  Future<void> getPermission(Permission permission) async {
+    final status = await Permission.storage.status;
+    if (status == PermissionStatus.granted) return;
+    if (status == PermissionStatus.permanentlyDenied) {
+      await openAppSettings();
+      await getPermission(permission);
+      return;
+    }
+    await permission.request();
+    await getPermission(permission);
   }
 
   void _showMessage({
@@ -44,155 +57,123 @@ class _MyAppState extends State<MyApp> {
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
-  ViewerModelController? viewer3dCtl;
-
-  Future _downloadAssets() async {
-    final assetsDownloaded =
-        await downloadAssetsController.assetsDirAlreadyExists();
-    if (assetsDownloaded) {
-      _showMessage(message: 'your assets is Downloaded');
-      return;
-    }
-    try {
-      await downloadAssetsController.startDownload(
-          assetsUrl:
-              "https://github.com/edjostenes/download_assets/raw/master/assets.zip",
-          onProgress: (progressValue) {
-            _showMessage(
-                message: "Downloading - ${progressValue.toStringAsFixed(2)}");
-          },
-          onComplete: () {
-            _showMessage(
-                message:
-                    "Download completed\nClick in refresh button to force download");
-          },
-          onError: (exception) {
-            _showMessage(message: "Error: ${exception.toString()}");
-          });
-    } on DownloadAssetsException catch (e) {
-      _showMessage(message: e.toString());
-    }
+  void pickModel() async {
+    final path = await FlutterDocumentPicker.openDocument();
+    if (path == null || path.isEmpty) return;
+    viewerModelController.loadModel(Model(path: path)).then((value) {
+      _showMessage(message: '${path_p.basename(path)} is loaded');
+    }).catchError((err) {
+      _showMessage(message: '$err');
+    });
   }
 
-  Future<void> loading = Future<void>.value();
-
-  void pickFile() async {
-    print(downloadAssetsController.assetsDir);
-    final list = Directory(downloadAssetsController.assetsDir).listSync();
-    // final list = await Download.assetsDir.then((d) => d.listSync());
-    showDialog(
-        context: context,
-        builder: (context) {
-          return SimpleDialog(
-            title: const Text('Load a file'),
-            // children: dir.listSync().map((file) {
-            //   return ListTile(
-            //     title: Text(path.basename(file.path)),
-            //     subtitle: Text(file.path),
-            //   );
-            // }).toList(),
-            children: [
-              for (final file in list)
-                ListTile(
-                  leading: const Icon(Icons.view_in_ar),
-                  title: const Text('Model'),
-                  subtitle: Text(path.basename(file.path)),
-                  // subtitle: Text(file.path),
-                  onTap: () async {
-                    if (viewer3dCtl == null) return;
-                    Navigator.of(context).pop();
-                    // debugPrint(file.path);
-                    setState(() {
-                      loading = viewer3dCtl!
-                          .loadModel(Model(path: file.path))
-                          .then((value) {
-                        _showMessage(
-                            message: '${path.basename(file.path)} loaded');
-                      }).catchError((err) {
-                        _showMessage(message: '$err');
-                      });
-                    });
-                  },
-                ),
-              ListTile(
-                leading: const Icon(Icons.view_in_ar),
-                title: const Text('Model'),
-                subtitle: const Text('Sphere'),
-                onTap: () async {
-                  if (viewer3dCtl == null) return;
-                  Navigator.of(context).pop();
-                  setState(() {
-                    loading = viewer3dCtl!.loadEarth().then((value) {
-                      _showMessage(message: 'Earth loaded');
-                    }).catchError((err) {
-                      _showMessage(message: '$err');
-                    });
-                  });
-                },
-              ),
-            ],
-          );
-        });
+  void loadEarth() async {
+    viewerModelController.loadEarth().then((value) {
+      _showMessage(message: 'Earth is loaded');
+    }).catchError((err) {
+      _showMessage(message: '$err');
+    });
   }
 
-  Model? get initialModel {
-    final file = File(
-        '/data/user/0/com.ayoub.viewer_model_example/app_flutter/assets/T-shirt_3dmodel.obj');
-    if (file.existsSync()) return Model(path: file.path);
+  void pickTexture() async {
+    final path = await FlutterDocumentPicker.openDocument();
+    if (path == null || path.isEmpty) return;
+    viewerModelController
+        .loadTexture(Model(
+      path: viewerModelController.model!.path,
+      texture: path,
+    ))
+        .then((value) {
+      _showMessage(message: '${path_p.basename(path)} is loaded');
+    }).catchError((err) {
+      _showMessage(message: '$err');
+    });
+  }
+
+  void backgroundImage() async {
+    final path = await FlutterDocumentPicker.openDocument();
+    if (path == null || path.isEmpty) return;
+    viewerModelController.backgroundImage(path).then((value) {
+      _showMessage(message: '${path_p.basename(path)} is loaded');
+    }).catchError((err) {
+      _showMessage(message: '$err');
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: const Text('Plugin example app'),
-        ),
-        floatingActionButton: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FloatingActionButton(
-              child: const Icon(Icons.refresh),
-              onPressed: () {
-                _showMessage(
-                    message: 'Are you shure you want to refresh',
-                    label: 'Refresh',
-                    onPressed: _refresh);
-              },
+      appBar: AppBar(
+        title: const Text('Plugin example app'),
+      ),
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            heroTag: 'loadEarth',
+            child: const Icon(Icons.animation_outlined),
+            onPressed: loadEarth,
+          ),
+          const SizedBox(width: 10),
+          FloatingActionButton(
+            heroTag: 'backgroundImage',
+            child: const Icon(Icons.wallpaper),
+            onPressed: backgroundImage,
+          ),
+          const SizedBox(width: 10),
+          FloatingActionButton(
+            heroTag: 'pickTexture',
+            child: const Icon(Icons.texture),
+            onPressed: pickTexture,
+          ),
+          const SizedBox(width: 10),
+          FloatingActionButton(
+            heroTag: 'pickModel',
+            child: const Icon(Icons.view_in_ar),
+            onPressed: pickModel,
+          ),
+        ],
+      ),
+      backgroundColor: Colors.red,
+      body: Column(
+        children: [
+          Text(
+            'Cam Pos: ${viewerModelController.camPosition.shortJson}',
+            style: const TextStyle(color: Colors.red),
+          ),
+          Text(
+            'Obj rotation: ${viewerModelController.rotation.shortJson}',
+            style: const TextStyle(color: Colors.red),
+          ),
+          Row(
+            children: [
+              Switch(
+                value: viewerModelController.transparentBackground,
+                onChanged: (value) {
+                  viewerModelController
+                      .setTransparentBackground(value)
+                      .then((value) => setState(() {}));
+                },
+              ),
+              StreamBuilder<bool>(
+                stream: viewerModelController.loading,
+                builder: (context, snap) {
+                  final laoding = snap.data ?? false;
+                  if (laoding) {
+                    return const CircularProgressIndicator();
+                  }
+                  return Container();
+                },
+              ),
+            ],
+          ),
+          Expanded(
+            child: ViewerModel(
+              controller: viewerModelController,
             ),
-            const SizedBox(width: 10),
-            FloatingActionButton(
-              child: const Icon(Icons.upload_file),
-              onPressed: pickFile,
-            ),
-          ],
-        ),
-        body: Stack(
-          children: [
-            ViewerModel(
-              initialModel: initialModel,
-              onViewCreated: (ctl) {
-                viewer3dCtl = ctl;
-                _downloadAssets();
-              },
-            ),
-            // Positioned(
-            //   top: 0,
-            //   left: 0,
-            //   right: 0,
-            //   height: 100,
-            //   child: StreamBuilder(
-            //     stream: viewer3dCtl?.loading,
-            //     builder: (context, snap) {
-            //       debugPrint('${snap.data}');
-            //       return Container(
-            //         color: Colors.green,
-            //         padding: const EdgeInsets.all(10),
-            //         child: Text('${snap.data}'),
-            //       );
-            //     },
-            //   ),
-            // ),
-            FormField<double>(
+          ),
+          /*
+               FormField<double>(
               initialValue: 1.0,
               builder: (state) {
                 return GestureDetector(
@@ -202,58 +183,37 @@ class _MyAppState extends State<MyApp> {
                   //   viewer3dCtl.rotate(viewer3dCtl.rotation);
                   // },
                   onHorizontalDragUpdate: (details) {
-                    viewer3dCtl?.rotation.y -= details.primaryDelta ?? 0;
-                    viewer3dCtl?.rotate(viewer3dCtl?.rotation);
+                    viewerModelController.rotation.y -=
+                        details.primaryDelta ?? 0;
+                    viewerModelController
+                        .rotate(viewerModelController.rotation);
                   },
                   onScaleStart: (details) {
                     state.didChange(1.0);
                   },
                   onScaleUpdate: (details) {
                     setState(() {
-                      viewer3dCtl?.camPosition.z -=
+                      viewerModelController.camPosition.z -=
                           details.scale - (state.value ?? 0);
-                      if ((viewer3dCtl?.camPosition.z ?? 0) < 0.1) {
-                        viewer3dCtl?.camPosition.z = .1;
+                      if (viewerModelController.camPosition.z < 0.1) {
+                        viewerModelController.camPosition.z = .1;
                       }
-                      viewer3dCtl?.moveCam(viewer3dCtl?.camPosition);
+                      viewerModelController
+                          .moveCam(viewerModelController.camPosition);
                       state.didChange(details.scale);
                     });
                   },
                 );
               },
-            ),
-            Center(
-              child: FutureBuilder(
-                future: loading,
-                builder: (context, snap) {
-                  final waiting =
-                      snap.connectionState == ConnectionState.waiting;
-                  if (waiting) {
-                    return const CircularProgressIndicator();
-                  }
-                  return Container();
-                },
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Cam Pos: ${viewer3dCtl?.camPosition.shortJson}',
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                  Text(
-                    'Obj rotation: ${viewer3dCtl?.rotation.shortJson}',
-                    style: const TextStyle(color: Colors.red),
-                  )
-                ],
-              ),
-            ),
-            /*
+            ),*/
+        ],
+      ),
+      /*    
+        Stack(
+          children: [
+            // Container(color: Colors.red),
+            
+          /*
             Positioned(
               bottom: 20,
               left: 20,
@@ -315,6 +275,9 @@ class _MyAppState extends State<MyApp> {
             ),
           */
           ],
-        ));
+        )
+        
+  */
+    );
   }
 }

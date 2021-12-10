@@ -17,7 +17,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  download_assets: ^2.1.0
+  permission_handler: ^8.3.0
+  flutter_document_picker: ^5.0.1-nullsafety.0
   viewer_model:
     # When depending on this package from a real application you should use:
     #   viewer_model: ^x.y.z

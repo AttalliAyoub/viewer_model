@@ -3,6 +3,8 @@ package com.ayoub.viewer_model
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.SurfaceTexture
+import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
@@ -29,27 +31,28 @@ import org.rajawali3d.renderer.Renderer
 import org.rajawali3d.view.ISurface
 import org.rajawali3d.view.SurfaceView
 import java.io.File
+import kotlin.math.tan
 
 internal class NativeView(
-    context: Context,
-    flutterPluginBinding: FlutterPlugin.FlutterPluginBinding,
+    context: Context?,
     id: Int,
+    private val flutterPluginBinding: FlutterPlugin.FlutterPluginBinding,
     private val creationParams: Map<String?, Any?>?
 ) :
     Renderer(context),
     PlatformView,
     MethodChannel.MethodCallHandler,
-    EventChannel.StreamHandler
-{
+    EventChannel.StreamHandler {
     // private val id: Int = id
     // private val flutterPluginBinding = flutterPluginBinding
-    private val eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "event_viewer_model$id")
-    private val channel = MethodChannel(flutterPluginBinding.binaryMessenger, "method_viewer_model$id")
+    private val eventChannel =
+        EventChannel(flutterPluginBinding.binaryMessenger, "event_viewer_model$id")
+    private val channel =
+        MethodChannel(flutterPluginBinding.binaryMessenger, "method_viewer_model$id")
     private val surfaceView = SurfaceView(context)
     private val gson = Gson()
     private var events: EventChannel.EventSink? = null
     private lateinit var mObject: Object3D
-    private lateinit var mDirectionalLight: DirectionalLight
 
     override fun getView(): View {
         return surfaceView
@@ -59,6 +62,7 @@ internal class NativeView(
         channel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(this)
         frameRate = 60.0
+        setTransparent()
         surfaceView.setFrameRate(frameRate)
         surfaceView.renderMode = ISurface.RENDERMODE_WHEN_DIRTY
         surfaceView.setSurfaceRenderer(this)
@@ -66,20 +70,32 @@ internal class NativeView(
         // this.setAntiAliasingMode(ISurface.ANTI_ALIASING_CONFIG.COVERAGE)
     }
 
-    override fun initScene() {
-        // ALight
-        // PointLight
-        // SpotLight
-        val spotLight = SpotLight(1f, .2f, -1f)
+    private fun addLightSpotLight(position: Vector3) {
+        val spotLight = SpotLight(position.x.toFloat(), position.y.toFloat(), position.z.toFloat())
+        spotLight.enableLookAt()
+        spotLight.lookAt = Vector3.ZERO
         spotLight.setColor(1.0f, 1.0f, 1.0f)
-        spotLight.power = 2f
-        mDirectionalLight = DirectionalLight(1.0, .2, -1.0)
-        mDirectionalLight.setColor(1.0f, 1.0f, 1.0f)
-        mDirectionalLight.power = 2f
-        currentScene.addLight(mDirectionalLight)
+        spotLight.power = 3f
         currentScene.addLight(spotLight)
-        currentScene.backgroundColor = Color.WHITE
-        currentCamera.farPlane = 1000.0
+    }
+
+    private fun addLightDirectionalLight(position: Vector3) {
+        val directionalLight = DirectionalLight(position.x, position.y, position.z)
+        directionalLight.setColor(1.0f, 1.0f, 1.0f)
+        directionalLight.power = 3f
+        directionalLight.enableLookAt()
+        directionalLight.lookAt = Vector3.ZERO
+        currentScene.addLight(directionalLight)
+    }
+
+    override fun initScene() {
+        addLightSpotLight(Vector3(1.0, 1.0, 1.0))
+        addLightSpotLight(Vector3(-1.0, 1.0, 1.0))
+        addLightDirectionalLight(Vector3(1.0, 1.0, 1.0))
+        addLightDirectionalLight(Vector3(-1.0, 1.0, 1.0))
+        // currentScene.backgroundColor = Color.WHITE
+        // view.setBackgroundColor(Color.WHITE)
+        currentCamera.farPlane = 5000.0
         currentCamera.nearPlane = 0.1
         currentCamera.z = 4.2
         loadFirstModel()
@@ -87,6 +103,7 @@ internal class NativeView(
 
     override fun dispose() {
         channel.setMethodCallHandler(null)
+        eventChannel.setStreamHandler(null)
     }
 
     override fun onOffsetsChanged(
@@ -97,75 +114,32 @@ internal class NativeView(
         xPixelOffset: Int,
         yPixelOffset: Int
     ) {
-        events?.success(mapOf(
-            "event" to "OffsetsChanged",
-            "data" to mapOf(
-                "xOffset" to xOffset,
-                "yOffset" to yOffset,
-                "xOffsetStep" to xOffsetStep,
-                "yOffsetStep" to yOffsetStep,
-                "xPixelOffset" to xPixelOffset,
-                "yPixelOffset" to yPixelOffset
+        events?.success(
+            mapOf(
+                "event" to "OffsetsChanged",
+                "data" to mapOf(
+                    "xOffset" to xOffset,
+                    "yOffset" to yOffset,
+                    "xOffsetStep" to xOffsetStep,
+                    "yOffsetStep" to yOffsetStep,
+                    "xPixelOffset" to xPixelOffset,
+                    "yPixelOffset" to yPixelOffset
+                )
             )
-        ))
+        )
 
     }
 
     override fun onTouchEvent(event: MotionEvent?) {
         if (event != null) {
             // event.classification;
-            events?.success(mapOf(
-                "event" to "touch",
-                "data" to gson.toJson(event)
-                    /*
-                    "data" to mapOf(
-                        "action" to event.action,
-                        "actionButton" to event.actionButton,
-                        "actionIndex" to event.actionIndex,
-                        "actionMasked" to event.actionMasked,
-                        "buttonState" to event.buttonState,
-                        "downTime" to event.downTime,
-                        "edgeFlags" to event.edgeFlags,
-                        "flags" to event.flags,
-                        "historySize" to event.historySize,
-                        "metaState" to event.metaState,
-                        "orientation" to event.orientation,
-                        "pointerCount" to event.pointerCount,
-                        "pressure" to event.pressure,
-                        "rawX" to event.rawX,
-                        "rawY" to event.rawY,
-                        "size" to event.size,
-                        "toolMajor" to event.toolMajor,
-                        "toolMinor" to event.toolMinor,
-                        "touchMajor" to event.touchMajor,
-                        "touchMinor" to event.touchMinor,
-                        "x" to event.x,
-                        "xPrecision" to event.xPrecision,
-                        "y" to event.y,
-                        "yPrecision" to event.yPrecision,
-                        "device" to mapOf(
-                            "controllerNumber" to event.device.controllerNumber,
-                            "controllerNumber" to event.device.id,
-                            "controllerNumber" to event.device.keyboardType,
-                            "controllerNumber" to event.device.productId,
-                            "controllerNumber" to event.device.sources,
-                            "controllerNumber" to event.device.vendorId,
-                            "controllerNumber" to event.device.descriptor,
-                            "controllerNumber" to event.device.descriptor,
-                            "controllerNumber" to event.device.controllerNumber,
-                            "controllerNumber" to event.device.controllerNumber,
-                            "controllerNumber" to event.device.controllerNumber,
-                            "controllerNumber" to event.device.controllerNumber,
-                            "controllerNumber" to event.device.controllerNumber
-                        ),
-                        "deviceId" to event.deviceId,
-                        "eventTime" to event.eventTime,
-                        "source" to event.source
-                    )
-                    */
-            ))
+            events?.success(
+                mapOf(
+                    "event" to "touch",
+                    "data" to gson.toJson(event)
+                )
+            )
         }
-
     }
 
     /*
@@ -175,17 +149,42 @@ internal class NativeView(
      */
 
     private fun loadFirstModel() {
-        val initialModel = creationParams?.get("initialModel") as Map<*, *>?
+        val initialModel = creationParams!!["initialModel"] as Map<*, *>?
         if (initialModel?.isNotEmpty() == true) {
             val path = initialModel["path"]!! as String
-            val texture =  initialModel["texture"] as String?
+            val texture = initialModel["texture"] as String?
             val loader = LoaderOBJ(this, File(path))
             loadModel(loader, texture)
         }
     }
 
+    private fun setTransparent() {
+        val transparentBackground = creationParams!!["transparentBackground"] as Boolean
+        surfaceView.setTransparent(transparentBackground)
+    }
+
     override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: MethodChannel.Result) {
         when (call.method) {
+            "transparentBackground" -> {
+                val value = call.argument<Boolean>("value")!!
+                surfaceView.setTransparent(value)
+                result.success(value)
+            }
+            "backgroundImage" -> {
+                val p = call.argument<String>("path")!!
+                val path = if (p.contains("flutter"))
+                    flutterPluginBinding.flutterAssets.getAssetFilePathByName(p)
+                    else p
+                val image = BitmapDrawable.createFromPath(path)
+                surfaceView.background = image
+                result.success(null)
+            }
+            "loadTexture" -> {
+                // val path = call.argument<String>("path")!!
+                val texture = call.argument<String>("texture")
+                mObject.material = loadTexture(texture)
+                result.success(null)
+            }
             "loadModel" -> {
                 val path = call.argument<String>("path")!!
                 val texture = call.argument<String>("texture")
@@ -221,26 +220,43 @@ internal class NativeView(
         }
     }
 
-    private fun loadModel(loader: ALoader, texture: String? = null, result: MethodChannel.Result? = null): ALoader {
-        return super.loadModel(loader, object: IAsyncLoaderCallback {
+    private fun loadModel(
+        loader: ALoader,
+        texture: String? = null,
+        result: MethodChannel.Result? = null
+    ): ALoader {
+        return super.loadModel(loader, object : IAsyncLoaderCallback {
             override fun onModelLoadComplete(l: ALoader) {
                 currentScene.clearChildren()
                 val loader = l as LoaderOBJ
                 mObject = loader.parsedObject
                 mObject.material = loadTexture(texture)
-                mObject.position = Vector3.ZERO
                 val box = mObject.boundingBox.max
-                currentCamera.position = Vector3(0.0, box.y / 2, box.z * 8)
+                currentCamera.position = Vector3(
+                    2 * box.x,
+                    2 * box.y,
+                    6 * listOf(box.y, box.x).max()!! / tan(currentCamera.fieldOfView)
+                )
+                currentCamera.enableLookAt()
+                currentCamera.lookAt = Vector3.ZERO
+                mObject.position = Vector3(0.0, -box.y / 2, 0.0)
+                // mObject.position = Vector3.ZERO
                 currentScene.addChild(mObject)
                 result?.success(null)
-                events?.success(mapOf(
-                    "event" to "loading",
-                    "data" to mapOf("status" to false)))
-                events?.success(mapOf(
-                    "event" to "cameraPosition",
-                    "data" to gson.toJson(currentCamera.position)
-                ))
+                events?.success(
+                    mapOf(
+                        "event" to "loading",
+                        "data" to mapOf("status" to false)
+                    )
+                )
+                events?.success(
+                    mapOf(
+                        "event" to "cameraPosition",
+                        "data" to gson.toJson(currentCamera.position)
+                    )
+                )
             }
+
             override fun onModelLoadFailed(loader: ALoader?) {
                 result?.error("CAN_NOT_LOAD", "Model load failed", "")
                 events?.error("CAN_NOT_LOAD", "Model load failed", "")
@@ -249,14 +265,20 @@ internal class NativeView(
         }, loader.tag)
     }
 
-    private fun loadTexture(path: String? = null): Material {
+    private fun loadTexture(p: String? = null): Material {
         val material = Material()
         material.enableLighting(true)
         material.diffuseMethod = DiffuseMethod.Lambert()
-        material.color = Color.RED
-        material.colorInfluence = 1f
-        if (path != null) {
-            val image = BitmapFactory.decodeStream(context.assets.open(path))
+        // material.color = Color.GREEN
+        material.ambientColor = Color.LTGRAY
+        material.colorInfluence = 0f
+        if (p != null) {
+            val path = if (p.contains("flutter"))
+                flutterPluginBinding.flutterAssets.getAssetFilePathByName(p)
+                else p
+            val image = if (path.contains("flutter"))
+                BitmapFactory.decodeStream(context.assets.open(path))
+                else BitmapFactory.decodeFile(path)
             val texture = Texture("path", image)
             try {
                 material.addTexture(texture)
@@ -273,9 +295,13 @@ internal class NativeView(
         mObject.material = loadTexture()
         mObject.position = Vector3.ZERO
         currentScene.addChild(mObject)
-        events?.success(mapOf(
-            "event" to "loadEarth",
-            "data" to mapOf("status" to false)))
+        currentCamera.position = Vector3(.0, .0, 6.0)
+        events?.success(
+            mapOf(
+                "event" to "loadEarth",
+                "data" to mapOf("status" to false)
+            )
+        )
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -283,18 +309,28 @@ internal class NativeView(
     }
 
     override fun onCancel(arguments: Any?) {
+        events = null
+    }
 
+    override fun onRenderSurfaceDestroyed(surface: SurfaceTexture?) {
+        super.onRenderSurfaceDestroyed(surface)
     }
 
     override fun onInputConnectionLocked() {
         this.onPause()
-        events?.success(mapOf(
-            "event" to "onInputConnectionLocked"))
+        events?.success(
+            mapOf(
+                "event" to "onInputConnectionLocked"
+            )
+        )
     }
 
     override fun onInputConnectionUnlocked() {
         this.onResume()
-        events?.success(mapOf(
-            "event" to "onInputConnectionUnlocked"))
+        events?.success(
+            mapOf(
+                "event" to "onInputConnectionUnlocked"
+            )
+        )
     }
 }
